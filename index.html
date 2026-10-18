@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e2a3b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WetterPro">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>WetterPro</title>
+<style>
+/* Layout: one scrolling column of forecast panels, Ora/Peler chart first */
+:root{
+  --bg:#eef3f5; --panel:#ffffff; --fg:#14252e; --muted:#5b707b; --line:#d3dee3;
+  --ora:#d9822b; --peler:#2f7fb8; --ecmwf:#7c8a92; --now:#c2372f;
+  --head:#0e2a3b; --head-fg:#e8f1f5;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0b1419; --panel:#13212a; --fg:#e3edf1; --muted:#8fa4ae; --line:#24363f;
+  --ora:#f0a050; --peler:#5aa7dc; --ecmwf:#8d9aa1; --now:#ff6b5f;
+  --head:#08141b; --head-fg:#e3edf1; color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--font);-webkit-text-size-adjust:100%}
+header{background:var(--head);color:var(--head-fg);
+  padding:calc(env(safe-area-inset-top,0px) + 12px) max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:1.25rem;letter-spacing:.01em}
+header .sub{font-size:.8rem;opacity:.75}
+main{max-width:900px;margin:0 auto;display:grid;gap:14px;
+  padding:14px max(12px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) max(12px,env(safe-area-inset-left,0px))}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}
+.ph{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:10px 12px 6px;flex-wrap:wrap}
+.ph h2{margin:0;font-size:1rem}
+.ph a{color:var(--peler);font-size:.85rem;text-decoration:none;white-space:nowrap}
+.note{margin:0;padding:0 12px 10px;color:var(--muted);font-size:.8rem}
+.status{padding:4px 12px 0;font-size:.95rem;font-weight:600}
+.status .v{font-variant-numeric:tabular-nums}
+.chart{width:100%}
+.chart svg{display:block;width:100%;height:auto}
+.chart svg text{fill:var(--muted);font:11px var(--font)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:4px 12px 10px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.img-wrap{padding:0 8px 8px}
+.img-wrap img{display:block;width:100%;height:auto;border-radius:6px;background:var(--line)}
+iframe{display:block;width:100%;border:0;background:var(--line)}
+#wf{height:330px}
+#windy{height:420px}
+.err{color:var(--now);padding:0 12px 10px;font-size:.85rem}
+button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:6px;padding:4px 10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>WetterPro <span class="sub">Lake Garda</span></h1>
+  <span class="sub" id="updated">Loading…</span>
+</header>
+<main>
+
+  <!-- 1. Ora / Peler pressure gradient, computed live from DWD ICON (original data) -->
+  <section>
+    <div class="ph">
+      <h2>Ora / Peler: Ghedi − Bolzano</h2>
+      <button id="reload" type="button">Refresh</button>
+    </div>
+    <div class="status" id="nowline">&nbsp;</div>
+    <div class="chart" id="chart"></div>
+    <div class="legend">
+      <span><i style="background:var(--ora)"></i>&gt; 0 hPa: Ora (south wind)</span>
+      <span><i style="background:var(--peler)"></i>&lt; 0 hPa: Peler (north wind)</span>
+      <span><i style="background:var(--ecmwf)"></i>ECMWF for comparison</span>
+    </div>
+    <p class="note">Mean sea-level pressure at Brescia/Ghedi minus Bolzano, hourly, DWD ICON model via Open-Meteo. Dashed lines at ±2 hPa, as on profiwetter.ch.</p>
+  </section>
+
+  <!-- 2. The profiwetter.ch graph itself (DWD MOSMIX station forecast) -->
+  <section>
+    <div class="ph">
+      <h2>Profiwetter (DWD MOSMIX)</h2>
+      <a href="https://profiwetter.ch/index.php?show=wind_garda&lang=en" target="_blank" rel="noopener">Open ↗</a>
+    </div>
+    <div class="img-wrap">
+      <img id="pw" alt="Lake Garda pressure difference chart from profiwetter.ch" loading="lazy">
+    </div>
+  </section>
+
+  <!-- 3. Windfinder official widget -->
+  <section>
+    <div class="ph">
+      <h2>Windfinder: Torbole Lido Blue</h2>
+      <a href="https://www.windfinder.com/weatherforecast/lake_garda_lido_blue_torbole" target="_blank" rel="noopener">Full forecast ↗</a>
+    </div>
+    <iframe id="wf" title="Windfinder forecast Torbole" loading="lazy"
+      src="https://www.windfinder.com/widget/forecast/lake_garda_lido_blue_torbole"></iframe>
+  </section>
+
+  <!-- 4. Windy official embed -->
+  <section>
+    <div class="ph">
+      <h2>Windy</h2>
+      <a href="https://www.windy.com/45.845/10.843/wind?45.817,10.877,12,p:cities" target="_blank" rel="noopener">Open ↗</a>
+    </div>
+    <iframe id="windy" title="Windy wind map Lake Garda" loading="lazy"
+      src="https://embed.windy.com/embed2.html?lat=45.817&lon=10.877&detailLat=45.845&detailLon=10.843&width=650&height=450&zoom=11&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=kt&metricTemp=%C2%B0C&radarRange=-1"></iframe>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  // Stations used by profiwetter: Bolzano (WMO 16020) and Brescia/Ghedi (WMO 16088)
+  var BZ = {lat:46.460, lon:11.326};
+  var GH = {lat:45.432, lon:10.267};
+  var DAYS = 6;
+
+  function url(model){
+    return "https://api.open-meteo.com/v1/forecast?latitude=" + GH.lat + "," + BZ.lat +
+      "&longitude=" + GH.lon + "," + BZ.lon +
+      "&hourly=pressure_msl&models=" + model +
+      "&forecast_days=" + DAYS + "&timezone=Europe%2FRome";
+  }
+
+  function diffSeries(j){
+    var g = j[0].hourly, b = j[1].hourly, out = [];
+    for (var i = 0; i < g.time.length; i++){
+      var a = g.pressure_msl[i], c = b.pressure_msl[i];
+      out.push({t:g.time[i], v:(a == null || c == null) ? null : Math.round((a - c) * 10) / 10});
+    }
+    return out;
+  }
+
+  function load(){
+    document.getElementById("updated").textContent = "Loading…";
+    Promise.all([
+      fetch(url("icon_seamless")).then(function(r){ return r.json(); }),
+      fetch(url("ecmwf_ifs025")).then(function(r){ return r.json(); }).catch(function(){ return null; })
+    ]).then(function(res){
+      var icon = diffSeries(res[0]);
+      var ec = res[1] && res[1].length ? diffSeries(res[1]) : null;
+      draw(icon, ec);
+      var d = new Date();
+      document.getElementById("updated").textContent = "Updated " +
+        d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+    }).catch(function(e){
+      document.getElementById("chart").innerHTML =
+        '<p class="err">Could not load the model data (' + e.message + '). Check the connection and tap Refresh.</p>';
+      document.getElementById("updated").textContent = "Offline";
+    });
+
+    // profiwetter image, cache-busted
+    var img = document.getElementById("pw");
+    img.onerror = function(){
+      img.replaceWith(Object.assign(document.createElement("p"), {
+        className:"err", textContent:"profiwetter.ch did not deliver the image. Use the Open link."}));
+    };
+    img.src = "https://profiwetter.ch/wind_garda_en.png?t=" + Math.floor(Date.now() / 600000);
+  }
+
+  // Current hour in Europe/Rome as "YYYY-MM-DDTHH:00"
+  function romeNowKey(){
+    var p = new Intl.DateTimeFormat("en-CA", {timeZone:"Europe/Rome", year:"numeric", month:"2-digit",
+      day:"2-digit", hour:"2-digit", hourCycle:"h23"}).formatToParts(new Date());
+    var o = {}; p.forEach(function(x){ o[x.type] = x.value; });
+    return o.year + "-" + o.month + "-" + o.day + "T" + o.hour + ":00";
+  }
+
+  var last = null;
+  function draw(s, ec){
+    last = [s, ec];
+    // draw at the container's real pixel width so text stays readable on a phone
+    var W = Math.max(300, document.getElementById("chart").clientWidth || 360);
+    var H = Math.round(Math.min(340, Math.max(220, W * 0.6)));
+    var L = 28, R = 8, T = 10, B = 26;
+    var n = s.length, pw = W - L - R, ph = H - T - B;
+    var vals = s.map(function(p){ return p.v; }).filter(function(v){ return v != null; });
+    if (ec) ec.forEach(function(p){ if (p.v != null) vals.push(p.v); });
+    // round the axis to even numbers so the grid lands on -4, -2, 0, 2, 4 …
+    var max = Math.max(4, 2 * Math.ceil((Math.max.apply(null, vals) + 0.3) / 2));
+    var min = Math.min(-4, 2 * Math.floor((Math.min.apply(null, vals) - 0.3) / 2));
+    function x(i){ return L + pw * i / (n - 1); }
+    function y(v){ return T + ph * (max - v) / (max - min); }
+    var svg = [];
+    svg.push('<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pressure difference forecast">');
+    svg.push('<defs><clipPath id="up"><rect x="' + L + '" y="' + T + '" width="' + pw + '" height="' + (y(0) - T) + '"/></clipPath>' +
+             '<clipPath id="dn"><rect x="' + L + '" y="' + y(0) + '" width="' + pw + '" height="' + (T + ph - y(0)) + '"/></clipPath></defs>');
+
+    // horizontal grid + labels
+    for (var v = min; v <= max; v += 2){
+      svg.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/>');
+      svg.push('<text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>');
+    }
+    // ±2 thresholds
+    [2, -2].forEach(function(t){
+      svg.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="' +
+        (t > 0 ? "var(--ora)" : "var(--peler)") + '" stroke-width="1" stroke-dasharray="5 4" opacity=".8"/>');
+    });
+
+    // day separators + day labels
+    s.forEach(function(p, i){
+      var h = +p.t.slice(11, 13);
+      if (h === 0){
+        svg.push('<line x1="' + x(i) + '" x2="' + x(i) + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="var(--muted)" stroke-width="1" opacity=".5"/>');
+      }
+      if (h === 12){
+        var d = new Date(p.t + ":00");
+        var lab = W < 520 ? d.toLocaleDateString("en-GB", {weekday:"short"})
+                          : d.toLocaleDateString("en-GB", {weekday:"short", day:"numeric", month:"numeric"});
+        svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + lab + '</text>');
+      }
+    });
+
+    // area + line for ICON
+    function path(series){
+      var d = "", pen = false;
+      series.forEach(function(p, i){
+        if (p.v == null){ pen = false; return; }
+        d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(p.v).toFixed(1);
+        pen = true;
+      });
+      return d;
+    }
+    var line = path(s);
+    var area = line + "L" + x(n - 1) + " " + y(0) + "L" + x(0) + " " + y(0) + "Z";
+    svg.push('<path d="' + area + '" fill="var(--ora)" opacity=".28" clip-path="url(#up)"/>');
+    svg.push('<path d="' + area + '" fill="var(--peler)" opacity=".28" clip-path="url(#dn)"/>');
+    if (ec) svg.push('<path d="' + path(ec) + '" fill="none" stroke="var(--ecmwf)" stroke-width="1.5" stroke-dasharray="3 3"/>');
+    svg.push('<path d="' + line + '" fill="none" stroke="var(--ora)" stroke-width="2.2" clip-path="url(#up)"/>');
+    svg.push('<path d="' + line + '" fill="none" stroke="var(--peler)" stroke-width="2.2" clip-path="url(#dn)"/>');
+    svg.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="var(--fg)" stroke-width="1.2"/>');
+
+    // now marker
+    var key = romeNowKey(), ni = -1;
+    for (var i = 0; i < n; i++) if (s[i].t === key) ni = i;
+    var status = document.getElementById("nowline");
+    if (ni >= 0){
+      svg.push('<line x1="' + x(ni) + '" x2="' + x(ni) + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="var(--now)" stroke-width="1.5"/>');
+      if (s[ni].v != null) svg.push('<circle cx="' + x(ni) + '" cy="' + y(s[ni].v) + '" r="4" fill="var(--now)"/>');
+      var nv = s[ni].v;
+      var word = nv >= 2 ? "Ora likely" : nv > 0 ? "weak Ora" : nv <= -2 ? "Peler likely" : "weak Peler";
+      status.innerHTML = 'Now: <span class="v">' + (nv > 0 ? "+" : "") + nv.toFixed(1) + ' hPa</span> · ' + word;
+    } else status.innerHTML = "&nbsp;";
+
+    svg.push('</svg>');
+    document.getElementById("chart").innerHTML = svg.join("");
+  }
+
+  var rt;
+  window.addEventListener("resize", function(){
+    clearTimeout(rt);
+    rt = setTimeout(function(){ if (last) draw(last[0], last[1]); }, 150);
+  });
+  document.getElementById("reload").addEventListener("click", load);
+  // Reopening the app after 15+ minutes reloads the data
+  var loadedAt = Date.now();
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible" && Date.now() - loadedAt > 15 * 60000){
+      loadedAt = Date.now(); load();
+    }
+  });
+  load();
+})();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});
+</script>
+</body>
+</html>
