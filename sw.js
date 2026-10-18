@@ -1,7 +1,7 @@
 // WetterPro app-shell cache. Bump VERSION when any file changes so phones pick up the update.
 // Forecast data, images and embeds come from other sites and are never cached here,
 // so the forecasts are always live.
-const VERSION = "wetterpro-v1";
+const VERSION = "wetterpro-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

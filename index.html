@@ -50,6 +50,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .img-wrap img{display:block;width:100%;height:auto;border-radius:6px;background:var(--line)}
 iframe{display:block;width:100%;border:0;background:var(--line)}
 #wf{height:330px}
+#radar{height:640px}
 #windy{height:420px}
 .err{color:var(--now);padding:0 12px 10px;font-size:.85rem}
 button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:6px;padding:4px 10px}
@@ -89,21 +90,28 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
     </div>
   </section>
 
-  <!-- 3. Windfinder official widget -->
+  <!-- 3. AccuWeather radar (their full radar page, Riva del Garda = location 1705) -->
+  <section>
+    <div class="ph">
+      <h2>Radar: AccuWeather</h2>
+    </div>
+    <iframe id="radar" title="AccuWeather radar Riva del Garda" loading="lazy"
+      src="https://www.accuweather.com/en/it/riva-del-garda/1705/weather-radar/1705"></iframe>
+  </section>
+
+  <!-- 4. Windfinder official widget -->
   <section>
     <div class="ph">
       <h2>Windfinder: Torbole Lido Blue</h2>
-      <a href="https://www.windfinder.com/weatherforecast/lake_garda_lido_blue_torbole" target="_blank" rel="noopener">Full forecast ↗</a>
     </div>
     <iframe id="wf" title="Windfinder forecast Torbole" loading="lazy"
       src="https://www.windfinder.com/widget/forecast/lake_garda_lido_blue_torbole"></iframe>
   </section>
 
-  <!-- 4. Windy official embed -->
+  <!-- 5. Windy official embed -->
   <section>
     <div class="ph">
       <h2>Windy</h2>
-      <a href="https://www.windy.com/45.845/10.843/wind?45.817,10.877,12,p:cities" target="_blank" rel="noopener">Open ↗</a>
     </div>
     <iframe id="windy" title="Windy wind map Lake Garda" loading="lazy"
       src="https://embed.windy.com/embed2.html?lat=45.817&lon=10.877&detailLat=45.845&detailLon=10.843&width=650&height=450&zoom=11&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=kt&metricTemp=%C2%B0C&radarRange=-1"></iframe>
