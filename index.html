@@ -15,6 +15,7 @@
 :root{
   --bg:#eef3f5; --panel:#ffffff; --fg:#14252e; --muted:#5b707b; --line:#d3dee3;
   --ora:#d9822b; --peler:#2f7fb8; --ecmwf:#7c8a92; --now:#c2372f;
+  --ora-t:#a85a16; --peler-t:#276fa3; --rain:#3f9a8c;
   --head:#0e2a3b; --head-fg:#e8f1f5;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   color-scheme:light;
@@ -22,6 +23,7 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#0b1419; --panel:#13212a; --fg:#e3edf1; --muted:#8fa4ae; --line:#24363f;
   --ora:#f0a050; --peler:#5aa7dc; --ecmwf:#8d9aa1; --now:#ff6b5f;
+  --ora-t:#f0a050; --peler-t:#6cb4e4; --rain:#5cc0b0;
   --head:#08141b; --head-fg:#e3edf1; color-scheme:dark;
 }}
 *{box-sizing:border-box}
@@ -52,6 +54,26 @@ iframe{display:block;width:100%;border:0;background:var(--line)}
 #radar{height:640px}
 .err{color:var(--now);padding:0 12px 10px;font-size:.85rem}
 button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:6px;padding:4px 10px}
+button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
+
+/* Daily forecast panel */
+.days{display:flex;gap:6px;overflow-x:auto;padding:2px 12px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.days::-webkit-scrollbar{display:none}
+.day{flex:0 0 auto;display:grid;gap:1px;text-align:left;padding:6px 10px;border-radius:8px;min-width:70px;cursor:pointer}
+.day b{font-size:.85rem;font-weight:600}
+.day span{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.day .k-ora{color:var(--ora-t);font-weight:600}
+.day .k-peler{color:var(--peler-t);font-weight:600}
+.day[aria-pressed="true"]{background:var(--bg);border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--fg)}
+.sum{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;padding:0 12px 10px;margin:0;font-size:.88rem}
+.sum dt{color:var(--muted)}
+.sum dd{margin:0;min-width:0;font-variant-numeric:tabular-nums}
+.sum .ora{color:var(--ora-t);font-weight:600}
+.sum .peler{color:var(--peler-t);font-weight:600}
+#dchart{touch-action:pan-y;cursor:pointer}
+#dchart svg text{font-size:10px}
+.readout{padding:2px 12px 10px;font-size:.88rem;font-variant-numeric:tabular-nums;min-height:1.5em}
+.readout b{font-weight:600}
 </style>
 </head>
 <body>
@@ -77,7 +99,26 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
     <p class="note">Mean sea-level pressure at Brescia/Ghedi minus Bolzano, hourly, DWD ICON model via Open-Meteo. Dashed lines at ±2 hPa, as on profiwetter.ch.</p>
   </section>
 
-  <!-- 2. The profiwetter.ch graph itself (DWD MOSMIX station forecast) -->
+  <!-- 2. Day-by-day wind forecast for the lake off Torbole, best high-resolution model per hour -->
+  <section>
+    <div class="ph">
+      <h2>Daily forecast: Torbole</h2>
+    </div>
+    <div class="days" id="days" role="group" aria-label="Choose a day"></div>
+    <dl class="sum" id="dsum"></dl>
+    <div class="chart" id="dchart"></div>
+    <div class="readout" id="dread">&nbsp;</div>
+    <div class="legend">
+      <span><i style="background:var(--ora)"></i>from south (Ora)</span>
+      <span><i style="background:var(--peler)"></i>from north (Peler)</span>
+      <span><i style="background:var(--ecmwf)"></i>other / calm</span>
+      <span><i style="background:var(--fg);height:2px"></i>gusts</span>
+      <span><i style="background:var(--rain)"></i>rain</span>
+    </div>
+    <p class="note">Hourly wind in knots over the lake off Torbole. Uses the sharpest model available for each hour: AROME 1.3 km, then ICON-2I, ICON-CH2, ECMWF. Tap a bar for that hour. Models usually underestimate the Ora at Torbole, so use this for timing and trend.</p>
+  </section>
+
+  <!-- 3. The profiwetter.ch graph itself (DWD MOSMIX station forecast) -->
   <section>
     <div class="ph">
       <h2>Profiwetter (DWD MOSMIX)</h2>
@@ -88,7 +129,7 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
     </div>
   </section>
 
-  <!-- 3. AccuWeather radar (their full radar page, Riva del Garda = location 1705) -->
+  <!-- 4. AccuWeather radar (their full radar page, Riva del Garda = location 1705) -->
   <section>
     <div class="ph">
       <h2>Radar: AccuWeather</h2>
@@ -141,6 +182,8 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
         '<p class="err">Could not load the model data (' + e.message + '). Check the connection and tap Refresh.</p>';
       document.getElementById("updated").textContent = "Offline";
     });
+
+    loadDaily();
 
     // profiwetter image, cache-busted
     var img = document.getElementById("pw");
@@ -237,12 +280,310 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
 
     svg.push('</svg>');
     document.getElementById("chart").innerHTML = svg.join("");
+    renderDaily();   // the daily summary shows the gradient, so refresh it too
   }
+
+  // ===================== Daily forecast (panel 2) =====================
+  // Lake point off Torbole; cell_selection=sea keeps the model cell on the water.
+  var DM = ["meteofrance_arome_france_hd", "italia_meteo_arpae_icon_2i", "meteoswiss_icon_ch2", "ecmwf_ifs025"];
+  var DM_NAME = {
+    meteofrance_arome_france_hd:"AROME 1.3 km", italia_meteo_arpae_icon_2i:"ICON-2I 2.2 km",
+    meteoswiss_icon_ch2:"ICON-CH2 2.1 km", ecmwf_ifs025:"ECMWF 25 km"
+  };
+  var DV = ["wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "temperature_2m", "cloud_cover", "precipitation"];
+  var daily = null;          // {days:[{date, rows, sunrise, sunset}], ymax}
+  var selDay = 0, selHour = null;
+
+  function dailyUrl(){
+    return "https://api.open-meteo.com/v1/forecast?latitude=45.86&longitude=10.87&cell_selection=sea" +
+      "&hourly=" + DV.join(",") + "&daily=sunrise,sunset&models=" + DM.join(",") +
+      "&wind_speed_unit=kn&forecast_days=" + DAYS + "&timezone=Europe%2FRome";
+  }
+
+  // Merge the models hour by hour: take the sharpest model that has wind for that hour.
+  function mergeModels(j){
+    var h = j.hourly, rows = [];
+    for (var i = 0; i < h.time.length; i++){
+      var m = null;
+      for (var k = 0; k < DM.length; k++){
+        var a = h["wind_speed_10m_" + DM[k]];
+        if (a && a[i] != null){ m = DM[k]; break; }
+      }
+      var r = {t:h.time[i], h:+h.time[i].slice(11, 13), m:m};
+      DV.forEach(function(v){
+        var val = m && h[v + "_" + m] ? h[v + "_" + m][i] : null;
+        if (val == null) for (var k = 0; k < DM.length; k++){
+          var a = h[v + "_" + DM[k]];
+          if (a && a[i] != null){ val = a[i]; break; }
+        }
+        r[v] = val;
+      });
+      rows.push(r);
+    }
+    return rows;
+  }
+
+  // sunrise/sunset may come back once per model; take the first value present
+  function dailyVal(j, name, d){
+    var ks = Object.keys(j.daily || {}).filter(function(k){ return k.indexOf(name) === 0; });
+    for (var i = 0; i < ks.length; i++){ var v = j.daily[ks[i]][d]; if (v) return v; }
+    return null;
+  }
+  function hourFrac(iso){ return iso ? +iso.slice(11, 13) + (+iso.slice(14, 16)) / 60 : null; }
+
+  function loadDaily(){
+    fetch(dailyUrl()).then(function(r){ return r.json(); }).then(function(j){
+      if (j.error) throw new Error(j.reason);
+      var rows = mergeModels(j), days = [], gmax = 0;
+      for (var d = 0; d * 24 < rows.length; d++){
+        var dr = rows.slice(d * 24, d * 24 + 24);
+        if (!dr.some(function(r){ return r.wind_speed_10m != null; })) continue;
+        dr.forEach(function(r){ gmax = Math.max(gmax, r.wind_gusts_10m || 0, r.wind_speed_10m || 0); });
+        days.push({date:dr[0].t.slice(0, 10), rows:dr,
+          sunrise:hourFrac(dailyVal(j, "sunrise", d)), sunset:hourFrac(dailyVal(j, "sunset", d))});
+      }
+      daily = {days:days, ymax:Math.max(15, 5 * Math.ceil((gmax + 1) / 5))};
+      if (selDay >= days.length) selDay = 0;
+      renderDaily();
+    }).catch(function(e){
+      document.getElementById("dsum").innerHTML = "";
+      document.getElementById("dchart").innerHTML =
+        '<p class="err">Could not load the daily forecast (' + e.message + '). Tap Refresh to try again.</p>';
+    });
+  }
+
+  // Wind class on the lake: Ora blows up the lake from S/SW, Peler down it from N/NE.
+  function cls(r){
+    if (r.wind_speed_10m == null || r.wind_direction_10m == null) return "x";
+    if (r.wind_speed_10m < 3) return "calm";
+    var d = r.wind_direction_10m;
+    if (d >= 135 && d <= 247.5) return "ora";
+    if (d >= 315 || d <= 67.5) return "peler";
+    return "x";
+  }
+  var COL = {ora:"var(--ora)", peler:"var(--peler)", x:"var(--ecmwf)", calm:"var(--ecmwf)"};
+  var COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  function compass(d){ return COMPASS[Math.round(d / 22.5) % 16]; }
+  function strength(kn){
+    return kn < 7 ? "light" : kn < 11 ? "gentle" : kn < 17 ? "moderate" : kn < 22 ? "fresh" : "strong";
+  }
+
+  // Longest-lasting/strongest run of one wind class at 6 kn or more (one-hour dips allowed).
+  function session(rows, type){
+    var runs = [], cur = null, gap = 0;
+    rows.forEach(function(r){
+      var ok = cls(r) === type && r.wind_speed_10m >= 6;
+      if (ok){
+        if (!cur){ cur = {from:r.h, to:r.h, best:r}; runs.push(cur); }
+        cur.to = r.h; gap = 0;
+        if (r.wind_speed_10m > cur.best.wind_speed_10m) cur.best = r;
+      } else if (cur && ++gap > 1){ cur = null; }
+    });
+    if (!runs.length) return null;
+    runs.sort(function(a, b){ return b.best.wind_speed_10m - a.best.wind_speed_10m; });
+    var s = runs[0];
+    // Ora and Peler are daily thermal winds; a wind blowing 10+ hours is a weather-system wind instead
+    var thermal = s.to - s.from < 10;
+    var name = type === "ora" ? (thermal && s.from >= 9 ? "Ora" : "South wind")
+                              : (thermal && s.from <= 11 ? "Peler" : "North wind");
+    return {name:name, from:s.from, to:s.to + 1, max:s.best.wind_speed_10m, gust:s.best.wind_gusts_10m, at:s.best.h};
+  }
+
+  function pad(h){ return (h < 10 ? "0" : "") + h; }
+  function dayLabel(date, i){
+    if (i === 0 && date === romeNowKey().slice(0, 10)) return "Today";
+    var d = new Date(date + "T12:00:00");
+    if (i === 1 && daily.days[0].date === romeNowKey().slice(0, 10)) return "Tomorrow";
+    return d.toLocaleDateString("en-GB", {weekday:"short", day:"numeric"});
+  }
+
+  function gradientFor(date){
+    if (!last) return null;
+    var am = null, pm = null;
+    last[0].forEach(function(p){
+      if (p.t.slice(0, 10) !== date || p.v == null) return;
+      var h = +p.t.slice(11, 13);
+      if (h <= 10 && (am == null || p.v < am)) am = p.v;
+      if (h >= 12 && h <= 18 && (pm == null || p.v > pm)) pm = p.v;
+    });
+    return {am:am, pm:pm};
+  }
+  function hpa(v){ return v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1) + " hPa"; }
+
+  function renderDaily(){
+    if (!daily) return;
+    var days = daily.days;
+
+    // day chips
+    var chips = days.map(function(d, i){
+      var o = session(d.rows, "ora"), p = session(d.rows, "peler");
+      var top = !o && !p ? null : !p || (o && o.max >= p.max) ? o : p;
+      var tag = top ? '<span class="' + (top === o ? "k-ora" : "k-peler") + '">' + top.name.split(" ")[0] +
+                ' ' + Math.round(top.max) + ' kn</span>' : '<span>calm</span>';
+      return '<button type="button" class="day" data-i="' + i + '" aria-pressed="' + (i === selDay) + '"><b>' +
+             dayLabel(d.date, i) + '</b>' + tag + '</button>';
+    });
+    var strip = document.getElementById("days"), keep = strip.scrollLeft;
+    strip.innerHTML = chips.join("");
+    strip.scrollLeft = keep;
+    var on = strip.querySelector('[aria-pressed="true"]');
+    if (on){   // keep the chosen day in view without moving the page
+      if (on.offsetLeft < strip.scrollLeft) strip.scrollLeft = on.offsetLeft - 12;
+      else if (on.offsetLeft + on.offsetWidth > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = on.offsetLeft + on.offsetWidth - strip.clientWidth + 12;
+    }
+
+    var day = days[selDay], rows = day.rows;
+    var isToday = day.date === romeNowKey().slice(0, 10);
+
+    // summary
+    var o = session(rows, "ora"), p = session(rows, "peler"), g = gradientFor(day.date);
+    function line(s, type, fallback){
+      if (!s) return '<dt>' + fallback + '</dt><dd>none (under 6 kn)</dd>';
+      return '<dt class="' + type + '">' + s.name + '</dt><dd>' + pad(s.from) + '–' + pad(s.to) + 'h · up to <b>' +
+        Math.round(s.max) + ' kn</b>' + (s.gust != null ? ', gusts ' + Math.round(s.gust) : '') + ' at ' + pad(s.at) +
+        'h · ' + strength(s.max) + '</dd>';
+    }
+    var tmin = Infinity, tmax = -Infinity, rain = 0, cloud = 0, nc = 0, models = [];
+    rows.forEach(function(r){
+      if (r.temperature_2m != null){ tmin = Math.min(tmin, r.temperature_2m); tmax = Math.max(tmax, r.temperature_2m); }
+      rain += r.precipitation || 0;
+      if (r.h >= 8 && r.h <= 18 && r.cloud_cover != null){ cloud += r.cloud_cover; nc++; }
+      var mn = DM_NAME[r.m]; if (mn && models.indexOf(mn) < 0) models.push(mn);
+    });
+    cloud = nc ? cloud / nc : null;
+    var sky = cloud == null ? "" : cloud < 25 ? "sunny" : cloud < 60 ? "partly cloudy" : cloud < 85 ? "mostly cloudy" : "overcast";
+    var weather = Math.round(tmin) + "–" + Math.round(tmax) + " °C · " + sky +
+      (rain >= 0.2 ? " · " + rain.toFixed(1) + " mm rain" : " · dry");
+    document.getElementById("dsum").innerHTML =
+      line(o, "ora", "Ora") + line(p, "peler", "Peler") +
+      (g && (g.am != null || g.pm != null) ? '<dt>Gradient</dt><dd>morning ' + hpa(g.am) + ' · afternoon ' + hpa(g.pm) + '</dd>' : '') +
+      '<dt>Weather</dt><dd>' + weather + '</dd>' +
+      '<dt>Model</dt><dd>' + models.join(", ") + '</dd>';
+
+    // default hour: now for today, otherwise the windiest daytime hour
+    if (selHour == null){
+      if (isToday) selHour = +romeNowKey().slice(11, 13);
+      else {
+        var best = rows[12];
+        rows.forEach(function(r){ if (r.h >= 8 && r.h <= 20 && (r.wind_speed_10m || 0) > (best.wind_speed_10m || 0)) best = r; });
+        selHour = best.h;
+      }
+    }
+    drawDaily(day, isToday);
+    readout(rows[selHour]);
+  }
+
+  function drawDaily(day, isToday){
+    var rows = day.rows, box = document.getElementById("dchart");
+    var W = Math.max(300, box.clientWidth || 360);
+    var L = 26, R = 6, AY = 13, T = 28, PH = 130, RAIN = 14;
+    var pw = W - L - R, cw = pw / 24, bw = Math.max(4, cw * 0.62);
+    var axis = T + PH, rTop = axis + 5, H = rTop + RAIN + 20;
+    var ymax = daily.ymax;
+    function cx(h){ return L + cw * (h + 0.5); }
+    function y(v){ return T + PH * (1 - v / ymax); }
+    var s = [];
+    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hourly wind forecast">');
+
+    // night shading from sunset/sunrise
+    if (day.sunrise != null) s.push('<rect x="' + L + '" y="' + T + '" width="' + (cw * day.sunrise) + '" height="' + PH + '" fill="var(--line)" opacity=".45"/>');
+    if (day.sunset != null) s.push('<rect x="' + (L + cw * day.sunset) + '" y="' + T + '" width="' + (cw * (24 - day.sunset)) + '" height="' + PH + '" fill="var(--line)" opacity=".45"/>');
+    // selected hour column
+    if (selHour != null) s.push('<rect x="' + (L + cw * selHour) + '" y="2" width="' + cw + '" height="' + (rTop + RAIN - 2) + '" rx="3" fill="var(--line)" opacity=".8"/>');
+
+    // knot grid
+    for (var v = 0; v <= ymax; v += 5){
+      s.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/>');
+      s.push('<text x="' + (L - 5) + '" y="' + (y(v) + 3.5) + '" text-anchor="end">' + v + '</text>');
+    }
+    s.push('<text x="' + (L - 5) + '" y="' + (T - 6) + '" text-anchor="end">kn</text>');
+
+    rows.forEach(function(r){
+      if (r.wind_speed_10m == null) return;
+      var c = cls(r), x = cx(r.h), top = y(r.wind_speed_10m);
+      // wind bar
+      s.push('<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) +
+             '" height="' + Math.max(0.5, axis - top).toFixed(1) + '" rx="1.5" fill="' + COL[c] + '"' +
+             (c === "calm" ? ' opacity=".5"' : '') + '/>');
+      // gust: thin stem + cap
+      if (r.wind_gusts_10m != null && r.wind_gusts_10m > r.wind_speed_10m){
+        var gy = y(Math.min(r.wind_gusts_10m, ymax));
+        s.push('<line x1="' + x + '" x2="' + x + '" y1="' + top + '" y2="' + gy + '" stroke="var(--fg)" stroke-width="1" opacity=".35"/>');
+        s.push('<line x1="' + (x - bw / 2) + '" x2="' + (x + bw / 2) + '" y1="' + gy + '" y2="' + gy + '" stroke="var(--fg)" stroke-width="2" opacity=".7"/>');
+      }
+      // direction arrow, pointing where the wind blows to
+      if (r.wind_direction_10m != null && r.wind_speed_10m >= 1){
+        var rot = (r.wind_direction_10m + 180) % 360;
+        s.push('<path d="M0,-5.5 L3.6,3.5 L0,1.4 L-3.6,3.5 Z" fill="' + COL[c] + '" transform="translate(' + x.toFixed(1) +
+               ',' + AY + ') rotate(' + rot + ')"/>');
+      }
+      // rain strip, full height at 3 mm/h
+      if (r.precipitation > 0){
+        var rh = Math.max(1.5, Math.min(1, r.precipitation / 3) * RAIN);
+        s.push('<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + (rTop + RAIN - rh).toFixed(1) + '" width="' + bw.toFixed(1) +
+               '" height="' + rh.toFixed(1) + '" fill="var(--rain)"/>');
+      }
+    });
+    s.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + axis + '" y2="' + axis + '" stroke="var(--fg)" stroke-width="1"/>');
+    s.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + (rTop + RAIN) + '" y2="' + (rTop + RAIN) + '" stroke="var(--line)" stroke-width="1"/>');
+    s.push('<text x="' + (L - 5) + '" y="' + (rTop + RAIN - 2) + '" text-anchor="end">mm</text>');
+
+    // hour labels
+    for (var h = 0; h < 24; h += 3)
+      s.push('<text x="' + cx(h) + '" y="' + (H - 4) + '" text-anchor="middle">' + pad(h) + '</text>');
+
+    // now line
+    if (isToday){
+      var now = new Date(), nh = +romeNowKey().slice(11, 13) + now.getMinutes() / 60;
+      var nx = L + cw * nh;
+      s.push('<line x1="' + nx + '" x2="' + nx + '" y1="' + (T - 4) + '" y2="' + (rTop + RAIN) + '" stroke="var(--now)" stroke-width="1.5"/>');
+    }
+    s.push('</svg>');
+    box.innerHTML = s.join("");
+    box.dataset.l = L; box.dataset.cw = cw; box.dataset.w = W;
+  }
+
+  function readout(r){
+    var el = document.getElementById("dread");
+    if (!r || r.wind_speed_10m == null){ el.innerHTML = "&nbsp;"; return; }
+    var c = cls(r);
+    var dir = r.wind_direction_10m != null ? "from " + compass(r.wind_direction_10m) + " " : "";
+    var tag = c === "ora" ? ' · <span style="color:var(--ora-t)">Ora side</span>' :
+              c === "peler" ? ' · <span style="color:var(--peler-t)">Peler side</span>' : "";
+    el.innerHTML = '<b>' + pad(r.h) + ':00</b> · ' + dir + '<b>' + Math.round(r.wind_speed_10m) + ' kn</b>' +
+      (r.wind_gusts_10m != null ? ', gusts ' + Math.round(r.wind_gusts_10m) : '') + tag +
+      (r.temperature_2m != null ? ' · ' + Math.round(r.temperature_2m) + ' °C' : '') +
+      (r.cloud_cover != null ? ' · cloud ' + Math.round(r.cloud_cover) + '%' : '') +
+      (r.precipitation > 0 ? ' · ' + r.precipitation.toFixed(1) + ' mm' : '') +
+      ' · ' + (DM_NAME[r.m] || "").split(" ")[0];
+  }
+
+  document.getElementById("days").addEventListener("click", function(e){
+    var b = e.target.closest(".day");
+    if (!b) return;
+    selDay = +b.dataset.i; selHour = null;
+    renderDaily();
+  });
+  document.getElementById("dchart").addEventListener("click", function(e){
+    if (!daily) return;
+    var box = e.currentTarget, rect = box.getBoundingClientRect();
+    var scale = (+box.dataset.w || rect.width) / rect.width;
+    var h = Math.floor(((e.clientX - rect.left) * scale - +box.dataset.l) / +box.dataset.cw);
+    if (h < 0 || h > 23) return;
+    selHour = h;
+    var day = daily.days[selDay];
+    drawDaily(day, day.date === romeNowKey().slice(0, 10));
+    readout(day.rows[h]);
+  });
 
   var rt;
   window.addEventListener("resize", function(){
     clearTimeout(rt);
-    rt = setTimeout(function(){ if (last) draw(last[0], last[1]); }, 150);
+    rt = setTimeout(function(){
+      if (last) draw(last[0], last[1]);
+      else if (daily) renderDaily();
+    }, 150);
   });
   document.getElementById("reload").addEventListener("click", load);
   // Reopening the app after 15+ minutes reloads the data
