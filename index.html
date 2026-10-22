@@ -115,7 +115,7 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
       <span><i style="background:var(--fg);height:2px"></i>gusts</span>
       <span><i style="background:var(--rain)"></i>rain</span>
     </div>
-    <p class="note">Hourly wind in knots over the lake off Torbole. Uses the sharpest model available for each hour: AROME 1.3 km, then ICON-2I, ICON-CH2, ECMWF. Tap a bar for that hour. Models usually underestimate the Ora at Torbole, so use this for timing and trend.</p>
+    <p class="note">Hourly wind in knots over the lake off Torbole. Today and the next 2 days, from the sharpest model available for each hour: AROME 1.3 km, then ICON-2I. Tap a bar for that hour. Models usually underestimate the Ora at Torbole, so use this for timing and trend.</p>
   </section>
 
   <!-- 3. The profiwetter.ch graph itself (DWD MOSMIX station forecast) -->
@@ -297,7 +297,7 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
   function dailyUrl(){
     return "https://api.open-meteo.com/v1/forecast?latitude=45.86&longitude=10.87&cell_selection=sea" +
       "&hourly=" + DV.join(",") + "&daily=sunrise,sunset&models=" + DM.join(",") +
-      "&wind_speed_unit=kn&forecast_days=" + DAYS + "&timezone=Europe%2FRome";
+      "&wind_speed_unit=kn&forecast_days=3&timezone=Europe%2FRome";   // today + next 2 days
   }
 
   // Merge the models hour by hour: take the sharpest model that has wind for that hour.
