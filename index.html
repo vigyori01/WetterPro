@@ -57,6 +57,10 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:tra
 button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
 
 /* Daily forecast panel */
+.spots{display:flex;margin:0 12px 8px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.spots button{flex:1 1 0;min-width:0;border:0;border-radius:0;padding:7px 4px;font-size:.88rem;cursor:pointer}
+.spots button + button{border-left:1px solid var(--line)}
+.spots button[aria-pressed="true"]{background:var(--head);color:var(--head-fg);font-weight:600}
 .days{display:flex;gap:6px;overflow-x:auto;padding:2px 12px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .days::-webkit-scrollbar{display:none}
 .day{flex:0 0 auto;display:grid;gap:1px;text-align:left;padding:6px 10px;border-radius:8px;min-width:70px;cursor:pointer}
@@ -99,10 +103,15 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
     <p class="note">Mean sea-level pressure at Brescia/Ghedi minus Bolzano, hourly, DWD ICON model via Open-Meteo. Dashed lines at ±2 hPa, as on profiwetter.ch.</p>
   </section>
 
-  <!-- 2. Day-by-day wind forecast for the lake off Torbole, best high-resolution model per hour -->
+  <!-- 2. Day-by-day wind forecast on the lake at three spots, best high-resolution model per hour -->
   <section>
     <div class="ph">
-      <h2>Daily forecast: Torbole</h2>
+      <h2>Daily forecast</h2>
+    </div>
+    <div class="spots" id="spots" role="group" aria-label="Choose a place">
+      <button type="button" data-spot="torbole" aria-pressed="true">Torbole</button>
+      <button type="button" data-spot="malcesine" aria-pressed="false">Malcesine</button>
+      <button type="button" data-spot="campione" aria-pressed="false">Campione</button>
     </div>
     <div class="days" id="days" role="group" aria-label="Choose a day"></div>
     <dl class="sum" id="dsum"></dl>
@@ -115,7 +124,7 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
       <span><i style="background:var(--fg);height:2px"></i>gusts</span>
       <span><i style="background:var(--rain)"></i>rain</span>
     </div>
-    <p class="note">Hourly wind in knots over the lake off Torbole. Today and the next 2 days, from the sharpest model available for each hour: AROME 1.3 km, then ICON-2I. Tap a bar for that hour. Models usually underestimate the Ora at Torbole, so use this for timing and trend.</p>
+    <p class="note">Hourly wind in knots on the water off the chosen place. Today and the next 2 days, from the sharpest model available for each hour: AROME 1.3 km, then ICON-2I. Tap a bar for that hour. Models usually underestimate the Ora and Peler on the lake, so use this for timing and trend.</p>
   </section>
 
   <!-- 3. The profiwetter.ch graph itself (DWD MOSMIX station forecast) -->
@@ -294,8 +303,20 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
   var daily = null;          // {days:[{date, rows, sunrise, sunset}], ymax}
   var selDay = 0, selHour = null;
 
+  // Points on the water off each place (each lands in its own model cell)
+  var SPOTS = [
+    {id:"torbole",   lat:45.860, lon:10.870},
+    {id:"malcesine", lat:45.762, lon:10.795},
+    {id:"campione",  lat:45.752, lon:10.762}
+  ];
+  var bySpot = null, ymaxAll = 15;
+  var selSpot = "torbole";
+  try { var saved = localStorage.getItem("wp-spot"); if (saved) selSpot = saved; } catch (e) {}
+  if (!SPOTS.some(function(s){ return s.id === selSpot; })) selSpot = "torbole";
+
   function dailyUrl(){
-    return "https://api.open-meteo.com/v1/forecast?latitude=45.86&longitude=10.87&cell_selection=sea" +
+    return "https://api.open-meteo.com/v1/forecast?latitude=" + SPOTS.map(function(s){ return s.lat; }).join(",") +
+      "&longitude=" + SPOTS.map(function(s){ return s.lon; }).join(",") + "&cell_selection=sea" +
       "&hourly=" + DV.join(",") + "&daily=sunrise,sunset&models=" + DM.join(",") +
       "&wind_speed_unit=kn&forecast_days=3&timezone=Europe%2FRome";   // today + next 2 days
   }
@@ -332,25 +353,48 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
   function hourFrac(iso){ return iso ? +iso.slice(11, 13) + (+iso.slice(14, 16)) / 60 : null; }
 
   function loadDaily(){
-    fetch(dailyUrl()).then(function(r){ return r.json(); }).then(function(j){
-      if (j.error) throw new Error(j.reason);
-      var rows = mergeModels(j), days = [], gmax = 0;
-      for (var d = 0; d * 24 < rows.length; d++){
-        var dr = rows.slice(d * 24, d * 24 + 24);
-        if (!dr.some(function(r){ return r.wind_speed_10m != null; })) continue;
-        dr.forEach(function(r){ gmax = Math.max(gmax, r.wind_gusts_10m || 0, r.wind_speed_10m || 0); });
-        days.push({date:dr[0].t.slice(0, 10), rows:dr,
-          sunrise:hourFrac(dailyVal(j, "sunrise", d)), sunset:hourFrac(dailyVal(j, "sunset", d))});
-      }
-      daily = {days:days, ymax:Math.max(15, 5 * Math.ceil((gmax + 1) / 5))};
-      if (selDay >= days.length) selDay = 0;
-      renderDaily();
+    fetch(dailyUrl()).then(function(r){ return r.json(); }).then(function(res){
+      if (res.error) throw new Error(res.reason);
+      var gmax = 0;
+      bySpot = {};
+      SPOTS.forEach(function(spot, k){
+        var j = res[k], rows = mergeModels(j), days = [];
+        for (var d = 0; d * 24 < rows.length; d++){
+          var dr = rows.slice(d * 24, d * 24 + 24);
+          if (!dr.some(function(r){ return r.wind_speed_10m != null; })) continue;
+          dr.forEach(function(r){ gmax = Math.max(gmax, r.wind_gusts_10m || 0, r.wind_speed_10m || 0); });
+          days.push({date:dr[0].t.slice(0, 10), rows:dr,
+            sunrise:hourFrac(dailyVal(j, "sunrise", d)), sunset:hourFrac(dailyVal(j, "sunset", d))});
+        }
+        bySpot[spot.id] = days;
+      });
+      // one knot scale for all places and days, so the bars compare directly
+      ymaxAll = Math.max(15, 5 * Math.ceil((gmax + 1) / 5));
+      useSpot(selSpot);
     }).catch(function(e){
       document.getElementById("dsum").innerHTML = "";
       document.getElementById("dchart").innerHTML =
         '<p class="err">Could not load the daily forecast (' + e.message + '). Tap Refresh to try again.</p>';
     });
   }
+
+  // Switch place; the chosen day and hour stay, so places compare side by side
+  function useSpot(id){
+    selSpot = id;
+    try { localStorage.setItem("wp-spot", id); } catch (e) {}
+    [].forEach.call(document.querySelectorAll("#spots button"), function(b){
+      b.setAttribute("aria-pressed", b.dataset.spot === id ? "true" : "false");
+    });
+    if (!bySpot) return;
+    daily = {days:bySpot[id], ymax:ymaxAll};
+    if (selDay >= daily.days.length) selDay = 0;
+    renderDaily();
+  }
+  document.getElementById("spots").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-spot]");
+    if (b && b.dataset.spot !== selSpot) useSpot(b.dataset.spot);
+  });
+  useSpot(selSpot);   // mark the remembered place before data arrives
 
   // Wind class on the lake: Ora blows up the lake from S/SW, Peler down it from N/NE.
   function cls(r){
