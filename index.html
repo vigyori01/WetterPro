@@ -639,7 +639,19 @@ button:focus-visible{outline:2px solid var(--peler);outline-offset:2px}
   });
   load();
 })();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});
+if ("serviceWorker" in navigator){
+  // When an update takes over, reload once so the new version shows right away
+  var hadController = !!navigator.serviceWorker.controller, reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", function(){
+    if (hadController && !reloaded){ reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register("sw.js", {updateViaCache: "none"}).then(function(reg){
+    // check for updates whenever the app comes back to the foreground
+    document.addEventListener("visibilitychange", function(){
+      if (document.visibilityState === "visible") reg.update().catch(function(){});
+    });
+  }).catch(function(){});
+}
 </script>
 </body>
 </html>

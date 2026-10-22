@@ -1,7 +1,7 @@
 // WetterPro app-shell cache. Bump VERSION when any file changes so phones pick up the update.
 // Forecast data, images and embeds come from other sites and are never cached here,
 // so the forecasts are always live.
-const VERSION = "wetterpro-v6";
+const VERSION = "wetterpro-v7";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -22,7 +22,8 @@ self.addEventListener("fetch", e => {
 
   // App page: network first (to pick up updates), cached copy when offline.
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).then(res => {
+    // cache:"no-cache" skips the browser's 10-minute page cache, so a new version shows at once
+    e.respondWith(fetch(req, {cache: "no-cache"}).then(res => {
       const copy = res.clone(); caches.open(VERSION).then(c => c.put("./index.html", copy)); return res;
     }).catch(() => caches.match("./index.html")));
     return;
